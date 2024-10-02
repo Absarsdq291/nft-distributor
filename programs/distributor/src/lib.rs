@@ -19,11 +19,6 @@ pub struct Distributor {
 pub mod distributor {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        let _distributor = &mut ctx.accounts.distributor;
-        Ok(())
-    }
-
     pub fn invoke_create_nft(
         ctx: Context<InvokeCreateSingleNft>,
         id: u64,
@@ -56,28 +51,15 @@ pub mod distributor {
 }
 
 #[derive(Accounts)]
-pub struct Initialize<'info> {
-    #[account(
-        init, 
-        seeds = [b"distributor"],
-        bump,
-        payer = payer, 
-        space = 8
-    )]
-    pub distributor: Account<'info, Distributor>,
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
 #[instruction(id: u64)]
 pub struct InvokeCreateSingleNft<'info> {
     /// CHECK
     #[account(
-        mut,
+        init_if_needed,
         seeds = [b"distributor"],
         bump,
+        payer = payer, 
+        space = 104
     )]
     pub distributor: Account<'info, Distributor>,
     #[account(mut)]

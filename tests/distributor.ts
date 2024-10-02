@@ -22,7 +22,7 @@ describe("distributor", () => {
 
   it("Mints an NFT", async () => {
     // Metadata for the NFT
-    const id = new BN(28);
+    const id = new BN(29);
     const name = "Cat NFT";
     const symbol = "EMB";
     const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
@@ -38,16 +38,6 @@ describe("distributor", () => {
       ],
       program.programId                   
     );
-
-    // const tx = await program.methods.initialize()
-    // .accounts({
-    //   distributor: distributor,
-    //   payer: payer.publicKey,
-    //   systemProgram: anchor.web3.SystemProgram.programId
-    // })
-    // .rpc();
-    
-    // console.log("Initialization transaction signature", tx);
 
     // Create the mint address
     const [mint, mintBump] = await PublicKey.findProgramAddress(
