@@ -1,0 +1,22 @@
+[toolchain]
+
+[features]
+seeds = false
+skip-lint = false
+
+[programs.localnet]
+distributor = "9gqCftnKaG2pYswKbM1GfaMU57fptTw893V3bkAXdkJX"
+nft_ct = "BtKo4Ljr6FDuw6xEzbcji2FwKPaQ2Try5qmyBmosL5kt"
+
+[programs.devnet]
+nft_ct = "BtKo4Ljr6FDuw6xEzbcji2FwKPaQ2Try5qmyBmosL5kt"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "/home/absar/my_new_keypair.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
