@@ -53,7 +53,6 @@ pub mod distributor {
 #[derive(Accounts)]
 #[instruction(id: u64)]
 pub struct InvokeCreateSingleNft<'info> {
-    /// CHECK
     #[account(
         init_if_needed,
         seeds = [b"distributor"],
