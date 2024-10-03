@@ -10,7 +10,10 @@ import BN from "bn.js";
 import {
   Transaction,
   ComputeBudgetProgram,
-  SYSVAR_INSTRUCTIONS_PUBKEY
+  SYSVAR_INSTRUCTIONS_PUBKEY,
+  Keypair,
+  Connection,
+  clusterApiUrl,
 } from "@solana/web3.js";
 
 describe("distributor", () => {
@@ -22,7 +25,7 @@ describe("distributor", () => {
 
   it("Mints an NFT", async () => {
     // Metadata for the NFT
-    const id = new BN(29);
+    const id = new BN(32);
     const name = "Cat NFT";
     const symbol = "EMB";
     const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
@@ -32,7 +35,7 @@ describe("distributor", () => {
     const payer = provider.wallet as anchor.Wallet;
 
     // Create the distributor pda address
-    const [distributor, distributorBump] = await PublicKey.findProgramAddress(
+    const [distributor] = await PublicKey.findProgramAddress(
       [
         Buffer.from("distributor")
       ],
@@ -40,7 +43,7 @@ describe("distributor", () => {
     );
 
     // Create the mint address
-    const [mint, mintBump] = await PublicKey.findProgramAddress(
+    const [mint] = await PublicKey.findProgramAddress(
       [
         Buffer.from("mint"),               // First seed: "mint"
         id.toArrayLike(Buffer, "le", 8)    // Second seed: id.to_le_bytes() (little-endian 8 bytes)
@@ -74,24 +77,24 @@ describe("distributor", () => {
     );
 
     console.log(
-      "Mint:", mint.toBase58(),
-      "Metadata:", metadataPDA.toBase58(),
-      "MasterEdition:", masterEditionPDA.toBase58(),
-      "TokenAccount:", tokenAccount.toBase58(),
-      "payer:", payer.publicKey.toBase58(),
-      "MetadataProgram:", new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBase58(),
-      "Distributor:", distributor.toBase58()
+      "\nMint:", mint.toBase58(),
+      "\nMetadata:", metadataPDA.toBase58(),
+      "\nMasterEdition:", masterEditionPDA.toBase58(),
+      "\nTokenAccount:", tokenAccount.toBase58(),
+      "\nPayer:", payer.publicKey.toBase58(),
+      "\nMetadataProgram:", new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBase58(),
+      "\nDistributor:", distributor.toBase58(), "\n"
     );
 
-    // Call the mint function from the program
+    // Call the mint function from the distributor program
     try{
         const tx = new Transaction();
         tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
         tx.add(await program.methods
             .invokeCreateNft(id, name, symbol, uri, amount)
             .accounts({
-                //authority: payer.publicKey,
-                //payer: payer.publicKey,
+                authority: payer.publicKey,
+                payer: payer.publicKey,
                 mint: mint,
                 distributor: distributor,
                 tokenAccount: tokenAccount,
@@ -113,28 +116,312 @@ describe("distributor", () => {
             [payer.payer] // Signers for the transaction
         );
 
-      console.log("\nYour transaction signature:", signature);
+      console.log("Transaction Signature:", signature);
+      const mintedAccount = await program.provider.connection.getParsedAccountInfo(mint);
+      assert.ok(mintedAccount.value !== null, "Mint account should exist after minting.");
     }catch(error){
-        console.error("Transaction failed:", error);
+      console.error("Transaction failed:", error);
+      assert.fail("Transaction failed.");
+    }
+  });
+
+  it("Fails to mint an NFT when called directly instead of through the distributor program", async () => {
+    // Metadata for the NFT
+    const id = new BN(30);
+    const name = "Cat NFT";
+    const symbol = "EMB";
+    const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
+
+    const provider = program.provider as anchor.AnchorProvider;
+    const payer = provider.wallet as anchor.Wallet;
+
+    // Create the mint address
+    const [mint] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("mint"),               // First seed: "mint"
+        id.toArrayLike(Buffer, "le", 8)    // Second seed: id.to_le_bytes() (little-endian 8 bytes)
+      ],
+      nftCtProgram.programId                    // Program ID
+    );
+
+    // Get the associated token account address for the payer
+    const tokenAccount = await getAssociatedTokenAddress(
+      mint,
+      payer.publicKey, 
+    );
+
+    const [metadataPDA] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBuffer(),
+        mint.toBuffer(),
+      ],
+      new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID)
+    );
+
+    const [masterEditionPDA] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBuffer(),
+        mint.toBuffer(),
+        Buffer.from("edition"),
+      ],
+      new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID)
+    );
+
+    console.log(
+      "\nMint:", mint.toBase58(),
+      "\nMetadata:", metadataPDA.toBase58(),
+      "\nMasterEdition:", masterEditionPDA.toBase58(),
+      "\nTokenAccount:", tokenAccount.toBase58(),
+      "\nPayer:", payer.publicKey.toBase58(),
+      "\nMetadataProgram:", new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBase58(), "\n"
+    );
+
+    try {
+      // Call the mint function from the nft program
+      const tx = await nftCtProgram.methods
+      .createSingleNft(id, name, symbol, uri)
+      .accounts({
+        authority: payer.publicKey,
+        payer: payer.publicKey,
+        mint: mint,
+        instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
+        tokenAccount: tokenAccount,
+        nftMetadata: metadataPDA,
+        masterEditionAccount: masterEditionPDA,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+        metadataProgram: new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID),
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+      assert.fail("The transaction was expected to fail with an error 'unauthorized error', but it succeeded.");
+
+    } 
+    catch(err){
+      // Assert that the error message is correct
+      assert.equal(err.error.errorMessage, "Unauthorized access", "Error message should be 'Unauthorized access'");
+    }
+  });
+
+  it("Fails to mint an NFT when SOL amount less than 0.01 is provided", async () => {
+    // Metadata for the NFT
+    const id = new BN(30);
+    const name = "Cat NFT";
+    const symbol = "EMB";
+    const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
+    let amount = new BN(0.001 * anchor.web3.LAMPORTS_PER_SOL);
+
+    const provider = program.provider as anchor.AnchorProvider;
+    const payer = provider.wallet as anchor.Wallet;
+
+    // Create the distributor pda address
+    const [distributor] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("distributor")
+      ],
+      program.programId                   
+    );
+
+    // Create the mint address
+    const [mint] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("mint"),               // First seed: "mint"
+        id.toArrayLike(Buffer, "le", 8)    // Second seed: id.to_le_bytes() (little-endian 8 bytes)
+      ],
+      nftCtProgram.programId                    // Program ID
+    );
+
+    // Get the associated token account address for the payer
+    const tokenAccount = await getAssociatedTokenAddress(
+      mint,
+      payer.publicKey, 
+    );
+
+    const [metadataPDA] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBuffer(),
+        mint.toBuffer(),
+      ],
+      new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID)
+    );
+
+    const [masterEditionPDA] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBuffer(),
+        mint.toBuffer(),
+        Buffer.from("edition"),
+      ],
+      new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID)
+    );
+
+    console.log(
+      "\nMint:", mint.toBase58(),
+      "\nMetadata:", metadataPDA.toBase58(),
+      "\nMasterEdition:", masterEditionPDA.toBase58(),
+      "\nTokenAccount:", tokenAccount.toBase58(),
+      "\nPayer:", payer.publicKey.toBase58(),
+      "\nMetadataProgram:", new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBase58(),
+      "\nDistributor:", distributor.toBase58(), "\n"
+    );
+
+    // Call the mint function from the distributor program
+    try{
+      const tx = new Transaction();
+      tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+      tx.add(await program.methods
+          .invokeCreateNft(id, name, symbol, uri, amount)
+          .accounts({
+              authority: payer.publicKey,
+              payer: payer.publicKey,
+              mint: mint,
+              distributor: distributor,
+              tokenAccount: tokenAccount,
+              nftMetadata: metadataPDA,
+              masterEditionAccount: masterEditionPDA,
+              rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+              instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
+              tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+              metadataProgram: new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID),
+              systemProgram: anchor.web3.SystemProgram.programId,
+              nftCtProgram: nftCtProgram.programId
+          })
+          .instruction()
+        )
+        
+      await anchor.web3.sendAndConfirmTransaction(
+          program.provider.connection,
+          tx,
+          [payer.payer] // Signers for the transaction
+      );
+
+      assert.fail("The transaction was expected to fail with an error 'insufficient amount', but it succeeded.");
+    }
+    catch(err){
+      const errorMessage = err.logs.find(log => log.includes("insufficient amount"));
+      assert.isTrue(errorMessage !== undefined, "Error message 'insufficient amount' should be in the logs.");
+    }
+  });
+
+  it("Fails when balance is insufficient", async () => {
+    const payer = Keypair.generate();
+
+    const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+
+    try{
+        await connection.requestAirdrop(
+          payer.publicKey, 
+          0.001 * anchor.web3.LAMPORTS_PER_SOL
+    )}
+    catch(err){
+      console.log(err);
     }
 
-    const mintedAccount = await program.provider.connection.getParsedAccountInfo(mint);
-    assert.ok(mintedAccount.value !== null, "Mint account should exist after minting.");
+    const balance = await connection.getBalance(payer.publicKey);
+    console.log(`Payer balance: ${balance / anchor.web3.LAMPORTS_PER_SOL} SOL`);
+
+    // Metadata for the NFT
+    const id = new BN(32);
+    const name = "Cat NFT";
+    const symbol = "EMB";
+    const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
+    let amount = new BN(0.01 * anchor.web3.LAMPORTS_PER_SOL);
+
+    const provider = program.provider as anchor.AnchorProvider;
+    
+    // Create the distributor pda address
+    const [distributor] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("distributor")
+      ],
+      program.programId                   
+    );
+
+    // Create the mint address
+    const [mint] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("mint"),               // First seed: "mint"
+        id.toArrayLike(Buffer, "le", 8)    // Second seed: id.to_le_bytes() (little-endian 8 bytes)
+      ],
+      nftCtProgram.programId                    // Program ID
+    );
+
+    // Get the associated token account address for the payer
+    const tokenAccount = await getAssociatedTokenAddress(
+      mint,
+      payer.publicKey, 
+    );
+
+    const [metadataPDA] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBuffer(),
+        mint.toBuffer(),
+      ],
+      new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID)
+    );
+
+    const [masterEditionPDA] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBuffer(),
+        mint.toBuffer(),
+        Buffer.from("edition"),
+      ],
+      new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID)
+    );
+
+    console.log(
+      "\nMint:", mint.toBase58(),
+      "\nMetadata:", metadataPDA.toBase58(),
+      "\nMasterEdition:", masterEditionPDA.toBase58(),
+      "\nTokenAccount:", tokenAccount.toBase58(),
+      "\nPayer:", payer.publicKey.toBase58(),
+      "\nMetadataProgram:", new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID).toBase58(),
+      "\nDistributor:", distributor.toBase58(), "\n"
+    );
+
+    // Call the mint function from the distributor program
+    try{
+        const tx = new Transaction();
+        tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+        tx.add(await program.methods
+            .invokeCreateNft(id, name, symbol, uri, amount)
+            .accounts({
+                authority: payer.publicKey,
+                payer: payer.publicKey,
+                mint: mint,
+                distributor: distributor,
+                tokenAccount: tokenAccount,
+                nftMetadata: metadataPDA,
+                masterEditionAccount: masterEditionPDA,
+                rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+                instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
+                tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+                metadataProgram: new PublicKey(MPL_TOKEN_METADATA_PROGRAM_ID),
+                systemProgram: anchor.web3.SystemProgram.programId,
+                nftCtProgram: nftCtProgram.programId
+            })
+            .instruction()
+          )
+          
+        await anchor.web3.sendAndConfirmTransaction(
+            program.provider.connection,
+            tx,
+            [payer] // Signers for the transaction
+        );
+
+        assert.fail("The transaction was expected to fail with an error 'transfer failed', but it succeeded.")
+    }
+    catch(err){
+      console.log(err);
+      const errorMessage = err.logs.find(log => log.includes("transfer failed"));
+      //assert.isTrue(errorMessage !== undefined, "Error message 'transfer failed' should be in the logs.");
+    }
   });
+
 });
-
-//mint address for the following metadata: 
-  // const id = new BN(1);
-  // const name = "Cat NFT";
-  // const symbol = "EMB";
-  // const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
-//: DN3gd713NXBcpnHc9Zxc4dHg6GjaKhLjCEo6wF2kmZWc
-//transaction signature: 426HVBojxHgobTsoCw4Vqe2yeMyXUMW34dx9ksoMaVcLjJhkghodcjxnqnQi4R5tmYLoy7Y4FXeqHcPGvr67Rkgf
-
-//mint address for the following metadata: 
-  // const id = new BN(2);
-  // const name = "Cat NFT";
-  // const symbol = "EMB";
-  // const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
-//: EEWdUCvXPQxK1iW2S6ViqRjyhZ5mQVmQwEGo9JsvZ4S5
-//transaction signature: ByzrdZHM939r1x8UAT9xjxKE2ifpVWWL5vAFwkyXnp21ZRh1RRe3Jh5hL1bmDNgqH7k8VuKf84oszoKNsekmvuM
