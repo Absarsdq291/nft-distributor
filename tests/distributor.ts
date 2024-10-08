@@ -25,7 +25,7 @@ describe("distributor", () => {
 
   it("Mints an NFT", async () => {
     // Metadata for the NFT
-    const id = new BN(32);
+    const id = new BN(34);
     const name = "Cat NFT";
     const symbol = "EMB";
     const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
@@ -127,7 +127,7 @@ describe("distributor", () => {
 
   it("Fails to mint an NFT when called directly instead of through the distributor program", async () => {
     // Metadata for the NFT
-    const id = new BN(30);
+    const id = new BN(40);
     const name = "Cat NFT";
     const symbol = "EMB";
     const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
@@ -201,14 +201,14 @@ describe("distributor", () => {
 
     } 
     catch(err){
-      // Assert that the error message is correct
+      //console.log(err);
       assert.equal(err.error.errorMessage, "Unauthorized access", "Error message should be 'Unauthorized access'");
     }
   });
 
   it("Fails to mint an NFT when SOL amount less than 0.01 is provided", async () => {
     // Metadata for the NFT
-    const id = new BN(30);
+    const id = new BN(40);
     const name = "Cat NFT";
     const symbol = "EMB";
     const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
@@ -302,6 +302,7 @@ describe("distributor", () => {
       assert.fail("The transaction was expected to fail with an error 'insufficient amount', but it succeeded.");
     }
     catch(err){
+      //console.log(err);
       const errorMessage = err.logs.find(log => log.includes("insufficient amount"));
       assert.isTrue(errorMessage !== undefined, "Error message 'insufficient amount' should be in the logs.");
     }
@@ -312,20 +313,24 @@ describe("distributor", () => {
 
     const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
 
-    try{
-        await connection.requestAirdrop(
-          payer.publicKey, 
-          0.001 * anchor.web3.LAMPORTS_PER_SOL
-    )}
-    catch(err){
-      console.log(err);
+    try {
+      const signature = await connection.requestAirdrop(
+        payer.publicKey,
+        0.001 * anchor.web3.LAMPORTS_PER_SOL 
+      );
+    
+      // Wait for the transaction to be confirmed
+      await connection.confirmTransaction(signature);
+      console.log("Airdrop successful!");
+    } catch (err) {
+      console.log("Airdrop failed:", err);
     }
 
     const balance = await connection.getBalance(payer.publicKey);
     console.log(`Payer balance: ${balance / anchor.web3.LAMPORTS_PER_SOL} SOL`);
 
     // Metadata for the NFT
-    const id = new BN(32);
+    const id = new BN(40);
     const name = "Cat NFT";
     const symbol = "EMB";
     const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
@@ -415,12 +420,13 @@ describe("distributor", () => {
             [payer] // Signers for the transaction
         );
 
-        assert.fail("The transaction was expected to fail with an error 'transfer failed', but it succeeded.")
+        assert.fail("The transaction was expected to fail with an error 'transfer failed', but it succeeded.");
     }
     catch(err){
-      console.log(err);
-      const errorMessage = err.logs.find(log => log.includes("transfer failed"));
-      //assert.isTrue(errorMessage !== undefined, "Error message 'transfer failed' should be in the logs.");
+      //console.log(err);
+      const errorMessage = err.message.includes("Attempt to debit an account but found no record of a prior credit");
+      const errorLogs = err.logs.find(log => log.includes("transfer failed"));
+      assert.isTrue(errorMessage === true || errorLogs !== undefined, "Error message 'transfer failed' or 'Attempt to debit an account but found no record of a prior credit' should be in the logs.");
     }
   });
 
