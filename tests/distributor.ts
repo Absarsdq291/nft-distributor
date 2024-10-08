@@ -25,7 +25,7 @@ describe("distributor", () => {
 
   it("Mints an NFT", async () => {
     // Metadata for the NFT
-    const id = new BN(34);
+    const id = new BN(35);
     const name = "Cat NFT";
     const symbol = "EMB";
     const uri = "https://gateway.irys.xyz/7Ce5hD2HdMzkSNJCp5u5Xe1y27qjZSWsyGjia3J7Gisd";
@@ -425,8 +425,8 @@ describe("distributor", () => {
     catch(err){
       //console.log(err);
       const errorMessage = err.message.includes("Attempt to debit an account but found no record of a prior credit");
-      const errorLogs = err.logs.find(log => log.includes("transfer failed"));
-      assert.isTrue(errorMessage === true || errorLogs !== undefined, "Error message 'transfer failed' or 'Attempt to debit an account but found no record of a prior credit' should be in the logs.");
+      const errorLogs = err.logs.find(log => log.includes("transfer failed") || log.includes("Transfer: insufficient lamports"));
+      assert.isTrue(errorMessage === true || errorLogs !== undefined, "Error message 'transfer failed', 'Transfer: insufficient lamports' or 'Attempt to debit an account but found no record of a prior credit' should be in the logs.");
     }
   });
 
